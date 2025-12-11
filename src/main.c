@@ -83,7 +83,8 @@ int hue = 0;
 enum material {
     BACKGROUND,
     SAND,
-    GAY_SAND
+    GAY_SAND,
+    ROCK
 };
 enum material current_brush = SAND;
 BOOL drawing = FALSE;
@@ -102,6 +103,8 @@ COLORREF material_to_color(enum material material) {
             if (hue > 255) hue = 0;
             return rainbow_table[hue];
         }
+        break;
+        case 3: return RGB(100, 100, 100);
         break;
     }
     return RGB(255, 255, 255);
@@ -128,8 +131,9 @@ BOOL is_index_in_bounds(int index) {
     return index % SCREEN_WIDTH != SCREEN_WIDTH - 1 && index % SCREEN_WIDTH != 0;
 }
 
-BOOL is_pixel_free(RGBQUAD pixel) {
-    return pixel.rgbRed == 0 && pixel.rgbBlue == 0 && pixel.rgbGreen == 0;
+BOOL check_pixel_material(RGBQUAD pixel, enum material color) {
+    // return pixel.rgbRed == 0 && pixel.rgbBlue == 0 && pixel.rgbGreen == 0;
+    return RGB(pixel.rgbRed, pixel.rgbGreen, pixel.rgbBlue) == material_to_color(color);
 }
 
 // TODO: probs a smarter refactor possible idk
@@ -164,17 +168,17 @@ void do_world_tick(HWND hwnd) {
 
     /* we don't care about bottom row. where's it gonna move? below the window? */
     for (int i = SCREEN_WIDTH; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
-        if (is_pixel_free(pixels[i])) continue;
+        if (check_pixel_material(pixels[i], BACKGROUND) || check_pixel_material(pixels[i], ROCK)) continue;
 
         COLORREF material_color = RGB(pixels[i].rgbRed, pixels[i].rgbGreen, pixels[i].rgbBlue);
 
         // straight down
-        if (is_pixel_free(pixels[i - SCREEN_WIDTH])) {
+        if (check_pixel_material(pixels[i - SCREEN_WIDTH], BACKGROUND)) {
             color_pixel(&pixels_next[i], material_to_color(BACKGROUND));
             color_pixel(&pixels_next[i - SCREEN_WIDTH], material_color);
         }
         // both diagonal movements available
-        else if (is_index_in_bounds(i) && is_pixel_free(pixels[i - SCREEN_WIDTH + 1]) && is_pixel_free(pixels[i - SCREEN_WIDTH - 1])) {
+        else if (is_index_in_bounds(i) && check_pixel_material(pixels[i - SCREEN_WIDTH + 1], BACKGROUND) && check_pixel_material(pixels[i - SCREEN_WIDTH - 1], BACKGROUND)) {
             color_pixel(&pixels_next[i], material_to_color(BACKGROUND));
             if (rand() % 2 == 0) {
                 // DL
@@ -185,12 +189,12 @@ void do_world_tick(HWND hwnd) {
             }
         }
         // DL
-        else if (i % SCREEN_WIDTH != 0 && is_pixel_free(pixels[i - SCREEN_WIDTH - 1])) {
+        else if (i % SCREEN_WIDTH != 0 && check_pixel_material(pixels[i - SCREEN_WIDTH - 1], BACKGROUND)) {
             color_pixel(&pixels_next[i], material_to_color(BACKGROUND));
             color_pixel(&pixels_next[i - SCREEN_WIDTH - 1], material_color);
         }
         // DR
-        else if (i % SCREEN_WIDTH != SCREEN_WIDTH - 1 && is_pixel_free(pixels[i - SCREEN_WIDTH + 1])) {
+        else if (i % SCREEN_WIDTH != SCREEN_WIDTH - 1 && check_pixel_material(pixels[i - SCREEN_WIDTH + 1], BACKGROUND)) {
             color_pixel(&pixels_next[i], material_to_color(BACKGROUND));
             color_pixel(&pixels_next[i - SCREEN_WIDTH + 1], material_color);
         }
@@ -277,34 +281,58 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch(msg)
     {
         case WM_CREATE:
-            // Button 1: Clear main window
+        // TODO: will need to remake the button pushdown be sorta a selector instead of this cursed shit but whatever for now. it works. just doesn't look like it
             CreateWindowEx(
                 WS_EX_CLIENTEDGE,
                 "BUTTON",
-                "gay sand?",
+                "smilts",
                 WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
-                10, 10, 260, 50,
+                10, 10, 60, 50,
                 hwnd, (HMENU)1,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
 
-            // Button 2: Fill main window blue
+            CreateWindowEx(
+                WS_EX_CLIENTEDGE,
+                "BUTTON",
+                "gay",
+                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
+                75, 10, 60, 50,
+                hwnd, (HMENU)2,
+                ((LPCREATESTRUCT)lParam)->hInstance,
+                NULL);
+            
+            CreateWindowEx(
+                WS_EX_CLIENTEDGE,
+                "BUTTON",
+                "akmens",
+                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
+                140, 10, 65, 50,
+                hwnd, (HMENU)3,
+                ((LPCREATESTRUCT)lParam)->hInstance,
+                NULL);
+
             CreateWindow(
                 "BUTTON",
-                "activate skibidi rizz sigma mode",
+                "aktivizēt skibidi rizz sigma režīmu",
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
                 10, 70, 260, 50,
-                hwnd, (HMENU)2,
+                hwnd, (HMENU)69,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
             return 0;
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case 1:
-                    if (current_brush != GAY_SAND) current_brush = GAY_SAND;
-                    else current_brush = SAND;
+                    current_brush = SAND;
                     break;
                 case 2:
+                    current_brush = GAY_SAND;
+                    break;
+                case 3:
+                    current_brush = ROCK;
+                    break;
+                case 69:
                     printf("daba dee daba do\n");
                     break;
             }
@@ -363,7 +391,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     hwnd_screen = CreateWindowEx(
         WS_EX_CLIENTEDGE,
         g_szClassNameMain,
-        "da sandbox",
+        "awesome fucking sandbox",
         // WS_OVERLAPPEDWINDOW,
         WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME ^ WS_MAXIMIZEBOX,
         // TODO: accomodate for other OS's
@@ -385,7 +413,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     hwnd_remote = CreateWindowEx(
         WS_EX_CLIENTEDGE,
         g_szClassNameRemote,
-        "da remote",
+        "comical remote",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 300, 400,
         NULL, NULL, hInstance, NULL);
