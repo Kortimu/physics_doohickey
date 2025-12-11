@@ -321,6 +321,10 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
             return 0;
+        // does the magic to make title-less bar draggable. idk win32 is a weird thing
+        case WM_LBUTTONDOWN:
+            SendMessage(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+            return 0;
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case 1:
@@ -392,7 +396,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         WS_EX_CLIENTEDGE,
         g_szClassNameMain,
         "awesome fucking sandbox",
-        // WS_OVERLAPPEDWINDOW,
         WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME ^ WS_MAXIMIZEBOX,
         // TODO: accomodate for other OS's
         CW_USEDEFAULT, CW_USEDEFAULT, SCREEN_WIDTH + 10, SCREEN_HEIGHT + 33,
@@ -411,10 +414,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     printf("booted skibidi rizz sigma mode\n\n");
 
     hwnd_remote = CreateWindowEx(
-        WS_EX_CLIENTEDGE,
+        WS_EX_APPWINDOW,
         g_szClassNameRemote,
         "comical remote",
-        WS_OVERLAPPEDWINDOW,
+        WS_POPUP | WS_VISIBLE,
         CW_USEDEFAULT, CW_USEDEFAULT, 300, 400,
         NULL, NULL, hInstance, NULL);
 
