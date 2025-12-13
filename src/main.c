@@ -2,6 +2,7 @@
 #include <windef.h>
 #include <windows.h>
 #include <wingdi.h>
+#include <wincodec.h>
 
 #define FRAME_RATE 120
 #define SCREEN_WIDTH 320
@@ -275,19 +276,121 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-// Step 4: the Window Procedure
+HBITMAP g_hbmBackground = NULL;
+HBITMAP g_hbmBackgroundMask = NULL;
+
 LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch(msg)
     {
-        case WM_CREATE:
-        // TODO: will need to remake the button pushdown be sorta a selector instead of this cursed shit but whatever for now. it works. just doesn't look like it
+        case WM_CREATE: {
+            IWICImagingFactory *pFactory = NULL;
+            IWICBitmapDecoder *pDecoder = NULL;
+            IWICBitmapFrameDecode *pFrame = NULL;
+            IWICFormatConverter *pConverter = NULL;
+
+            // Initialize COM for WIC
+            CoInitialize(NULL);
+
+            // Create WIC factory
+            HRESULT hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
+                                        &IID_IWICImagingFactory, (LPVOID*)&pFactory);
+            if (FAILED(hr)) return -1;
+
+            // Create decoder for PNG file
+            hr = pFactory->lpVtbl->CreateDecoderFromFilename(
+                pFactory,
+                L"C:\\Users\\Meira\\Desktop\\Projects\\physics_toy\\assets\\temp_remote_trans.png",   // PNG path
+                NULL,
+                GENERIC_READ,
+                WICDecodeMetadataCacheOnLoad,
+                &pDecoder);
+            if (FAILED(hr)) return -1;
+
+            // Get first frame
+            hr = pDecoder->lpVtbl->GetFrame(pDecoder, 0, &pFrame);
+            if (FAILED(hr)) return -1;
+
+            // Convert to 32bppPBGRA (premultiplied alpha, what UpdateLayeredWindow expects)
+            hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverter);
+            if (FAILED(hr)) return -1;
+
+            hr = pConverter->lpVtbl->Initialize(
+                pConverter,
+                (IWICBitmapSource*)pFrame,
+                &GUID_WICPixelFormat32bppPBGRA,
+                WICBitmapDitherTypeNone,
+                NULL,
+                0.0,
+                WICBitmapPaletteTypeCustom);
+            if (FAILED(hr)) return -1;
+
+            // Get size
+            UINT width, height;
+            pConverter->lpVtbl->GetSize(pConverter, &width, &height);
+
+            // Allocate buffer
+            UINT stride = width * 4;
+            UINT bufSize = stride * height;
+            BYTE* buffer = (BYTE*)malloc(bufSize);
+
+            // Copy pixels into buffer
+            hr = pConverter->lpVtbl->CopyPixels(pConverter, NULL, stride, bufSize, buffer);
+            if (FAILED(hr)) return -1;
+
+            // Create DIB section
+            BITMAPINFO bmi = {0};
+            bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+            bmi.bmiHeader.biWidth       = width;
+            bmi.bmiHeader.biHeight      = -((LONG)height); // top-down
+            bmi.bmiHeader.biPlanes      = 1;
+            bmi.bmiHeader.biBitCount    = 32;
+            bmi.bmiHeader.biCompression = BI_RGB;
+
+            void* pvBits = NULL;
+            HDC hdcScreen = GetDC(NULL);
+            HBITMAP hBmp = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pvBits, NULL, 0);
+
+            // Copy buffer into DIB
+            memcpy(pvBits, buffer, bufSize);
+
+            // Push into layered window
+            HDC hdcMem = CreateCompatibleDC(hdcScreen);
+            HBITMAP old = (HBITMAP)SelectObject(hdcMem, hBmp);
+
+            SIZE sizeWindow = { width, height };
+            POINT ptSrc     = { 0, 0 };
+            POINT ptDest    = { 450, 20 };
+
+            BLENDFUNCTION blend = {0};
+            blend.BlendOp             = AC_SRC_OVER;
+            blend.BlendFlags          = 0;
+            blend.SourceConstantAlpha = 255;
+            blend.AlphaFormat         = AC_SRC_ALPHA;
+
+            UpdateLayeredWindow(hwnd, hdcScreen, &ptDest, &sizeWindow,
+                                hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
+
+            // Cleanup
+            SelectObject(hdcMem, old);
+            DeleteDC(hdcMem);
+            ReleaseDC(NULL, hdcScreen);
+            free(buffer);
+
+            pConverter->lpVtbl->Release(pConverter);
+            pFrame->lpVtbl->Release(pFrame);
+            pDecoder->lpVtbl->Release(pDecoder);
+            pFactory->lpVtbl->Release(pFactory);
+            CoUninitialize();
+
+
+            // TODO: will need to remake the button pushdown be sorta a selector instead of this cursed shit but whatever for now. it works. just doesn't look like it
             CreateWindowEx(
                 WS_EX_CLIENTEDGE,
                 "BUTTON",
                 "smilts",
                 WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
-                10, 10, 60, 50,
+                50, 210, 60, 50,
                 hwnd, (HMENU)1,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
@@ -297,7 +400,7 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 "BUTTON",
                 "gay",
                 WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
-                75, 10, 60, 50,
+                115, 210, 60, 50,
                 hwnd, (HMENU)2,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
@@ -307,20 +410,21 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 "BUTTON",
                 "akmens",
                 WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
-                140, 10, 65, 50,
+                180, 210, 60, 50,
                 hwnd, (HMENU)3,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
 
             CreateWindow(
                 "BUTTON",
-                "aktivizēt skibidi rizz sigma režīmu",
+                "skibidi rizz sigma mode",
                 WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                10, 70, 260, 50,
+                50, 270, 190, 50,
                 hwnd, (HMENU)69,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
             return 0;
+        }
         // does the magic to make title-less bar draggable. idk win32 is a weird thing
         case WM_LBUTTONDOWN:
             SendMessage(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
@@ -345,6 +449,14 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             DestroyWindow(hwnd);
         break;
         case WM_DESTROY:
+            if (g_hbmBackground) {
+                DeleteObject(g_hbmBackground);
+                g_hbmBackground = NULL;
+            }
+            if (g_hbmBackgroundMask) {
+                DeleteObject(g_hbmBackgroundMask);
+                g_hbmBackgroundMask = NULL;
+            }
             PostQuitMessage(0);
         break;
         default:
@@ -381,7 +493,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
 
     wc.lpfnWndProc = RemProc;
-    wc.hbrBackground = CreateSolidBrush(RGB(134, 119, 95));
+    // wc.hbrBackground = CreateSolidBrush(RGB(134, 119, 95));
+    wc.hbrBackground = NULL;
     wc.lpszClassName = g_szClassNameRemote;
 
     if(!RegisterClassEx(&wc))
@@ -414,11 +527,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     printf("booted skibidi rizz sigma mode\n\n");
 
     hwnd_remote = CreateWindowEx(
-        WS_EX_APPWINDOW,
+        WS_EX_LAYERED | WS_EX_APPWINDOW,
         g_szClassNameRemote,
         "comical remote",
         WS_POPUP | WS_VISIBLE,
-        CW_USEDEFAULT, CW_USEDEFAULT, 300, 400,
+        450, 20, 300, 600,
         NULL, NULL, hInstance, NULL);
 
     if (hwnd_remote == NULL) {
