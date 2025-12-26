@@ -300,7 +300,7 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             // Create decoder for PNG file
             hr = pFactory->lpVtbl->CreateDecoderFromFilename(
                 pFactory,
-                L"C:\\Users\\Meira\\Desktop\\Projects\\physics_toy\\assets\\temp_remote_trans.png",   // PNG path
+                L"C:\\Users\\Meira\\Desktop\\Projects\\physics_toy\\assets\\remote.png",   // PNG path
                 NULL,
                 GENERIC_READ,
                 WICDecodeMetadataCacheOnLoad,
@@ -389,7 +389,7 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 WS_EX_CLIENTEDGE,
                 "BUTTON",
                 "smilts",
-                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
+                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_GROUP,
                 50, 210, 60, 50,
                 hwnd, (HMENU)1,
                 ((LPCREATESTRUCT)lParam)->hInstance,
@@ -399,7 +399,7 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 WS_EX_CLIENTEDGE,
                 "BUTTON",
                 "gay",
-                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
+                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | BS_PUSHLIKE,
                 115, 210, 60, 50,
                 hwnd, (HMENU)2,
                 ((LPCREATESTRUCT)lParam)->hInstance,
@@ -409,7 +409,7 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 WS_EX_CLIENTEDGE,
                 "BUTTON",
                 "akmens",
-                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | BS_PUSHLIKE,
+                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | BS_PUSHLIKE,
                 180, 210, 60, 50,
                 hwnd, (HMENU)3,
                 ((LPCREATESTRUCT)lParam)->hInstance,
@@ -418,11 +418,13 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             CreateWindow(
                 "BUTTON",
                 "skibidi rizz sigma mode",
-                WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_GROUP,
                 50, 270, 190, 50,
                 hwnd, (HMENU)69,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
+            
+            CheckRadioButton(hwnd, 1, 3, 1);
             return 0;
         }
         // does the magic to make title-less bar draggable. idk win32 is a weird thing
