@@ -276,6 +276,171 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+// TODO: refactor for multiple pressed buttons
+// (toggles and whatnot idk)
+// (also just general press behaviour for when i feel like it)
+int DrawRemote(HWND hwnd, int brushX, int brushY)
+{
+    IWICImagingFactory *pFactory = NULL;
+
+    IWICBitmapDecoder *pDecoderBG = NULL;
+    IWICBitmapFrameDecode *pFrameBG = NULL;
+    IWICFormatConverter *pConverterBG = NULL;
+
+    IWICBitmapDecoder *pDecoderBTN = NULL;
+    IWICBitmapFrameDecode *pFrameBTN = NULL;
+    IWICFormatConverter *pConverterBTN = NULL;
+
+    CoInitialize(NULL);
+
+    HRESULT hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
+                                &IID_IWICImagingFactory, (LPVOID*)&pFactory);
+    if (FAILED(hr)) return -1;
+
+    /******* load background *******/
+    hr = pFactory->lpVtbl->CreateDecoderFromFilename(
+        pFactory,
+        L"C:\\Users\\Meira\\Desktop\\Projects\\physics_toy\\assets\\remote.png",
+        NULL,
+        GENERIC_READ,
+        WICDecodeMetadataCacheOnLoad,
+        &pDecoderBG);
+    if (FAILED(hr)) return -1;
+
+    hr = pDecoderBG->lpVtbl->GetFrame(pDecoderBG, 0, &pFrameBG);
+    if (FAILED(hr)) return -1;
+
+    // convert to how UpdateLayeredWindow likes it, premultiplied and what not
+    hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverterBG);
+    if (FAILED(hr)) return -1;
+
+    hr = pConverterBG->lpVtbl->Initialize(
+        pConverterBG,
+        (IWICBitmapSource*)pFrameBG,
+        &GUID_WICPixelFormat32bppPBGRA,
+        WICBitmapDitherTypeNone,
+        NULL,
+        0.0,
+        WICBitmapPaletteTypeCustom);
+    if (FAILED(hr)) return -1;
+
+    UINT widthBG, heightBG;
+    pConverterBG->lpVtbl->GetSize(pConverterBG, &widthBG, &heightBG);
+
+    UINT strideBG = widthBG * 4;
+    UINT bufSizeBG = strideBG * heightBG;
+    BYTE* bufferBG = (BYTE*)malloc(bufSizeBG);
+
+    hr = pConverterBG->lpVtbl->CopyPixels(pConverterBG, NULL, strideBG, bufSizeBG, bufferBG);
+    if (FAILED(hr)) return -1;
+
+    /******* load button selector thingy *******/
+    hr = pFactory->lpVtbl->CreateDecoderFromFilename(
+        pFactory,
+        L"C:\\Users\\Meira\\Desktop\\Projects\\physics_toy\\assets\\bumton_pressed.png",
+        NULL,
+        GENERIC_READ,
+        WICDecodeMetadataCacheOnLoad,
+        &pDecoderBTN);
+    if (FAILED(hr)) return -1;
+
+    hr = pDecoderBTN->lpVtbl->GetFrame(pDecoderBTN, 0, &pFrameBTN);
+    if (FAILED(hr)) return -1;
+
+    // convert to how UpdateLayeredWindow likes it, premultiplied and what not
+    hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverterBTN);
+    if (FAILED(hr)) return -1;
+
+    hr = pConverterBTN->lpVtbl->Initialize(
+        pConverterBTN,
+        (IWICBitmapSource*)pFrameBTN,
+        &GUID_WICPixelFormat32bppPBGRA,
+        WICBitmapDitherTypeNone,
+        NULL,
+        0.0,
+        WICBitmapPaletteTypeCustom);
+    if (FAILED(hr)) return -1;
+
+    UINT widthBTN, heightBTN;
+    pConverterBTN->lpVtbl->GetSize(pConverterBTN, &widthBTN, &heightBTN);
+
+    UINT strideBTN = widthBTN * 4;
+    UINT bufSizeBTN = strideBTN * heightBTN;
+    BYTE* bufferBTN = (BYTE*)malloc(bufSizeBTN);
+
+    hr = pConverterBTN->lpVtbl->CopyPixels(pConverterBTN, NULL, strideBTN, bufSizeBTN, bufferBTN);
+    if (FAILED(hr)) return -1;
+
+    /******* do some blit goodness (bg x button) *******/
+    UINT32* dst = (UINT32*)bufferBG;
+    UINT32* src = (UINT32*)bufferBTN;
+
+    for (UINT y = 0; y < heightBTN; ++y) {
+        for (UINT x = 0; x < widthBTN; ++x) {
+            int dx = brushX + x;
+            int dy = brushY + y;
+
+            if (dx < 0 || dy < 0 || dx >= (int)widthBG || dy >= (int)heightBG) {
+                continue;
+            }
+
+            dst[dy * widthBG + dx] = src[y * widthBTN + x];
+        }
+    }
+
+    /******* other shit and cleanup *******/
+    BITMAPINFO bmi = {0};
+    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth       = widthBG;
+    bmi.bmiHeader.biHeight      = -((LONG)heightBG); // top-down
+    bmi.bmiHeader.biPlanes      = 1;
+    bmi.bmiHeader.biBitCount    = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* pvBits = NULL;
+    HDC hdcScreen = GetDC(NULL);
+    HBITMAP hBmp = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pvBits, NULL, 0);
+
+    memcpy(pvBits, bufferBG, bufSizeBG);
+
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+    HBITMAP old = (HBITMAP)SelectObject(hdcMem, hBmp);
+
+    RECT rc;
+    GetWindowRect(hwnd, &rc);
+
+    SIZE sizeWindow = { widthBG, heightBG };
+    POINT ptSrc     = { 0, 0 };
+    POINT ptDest    = { rc.left, rc.top };
+
+    BLENDFUNCTION blend = {0};
+    blend.BlendOp             = AC_SRC_OVER;
+    blend.BlendFlags          = 0;
+    blend.SourceConstantAlpha = 255;
+    blend.AlphaFormat         = AC_SRC_ALPHA;
+
+    UpdateLayeredWindow(hwnd, hdcScreen, &ptDest, &sizeWindow,
+                        hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
+
+    SelectObject(hdcMem, old);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+    free(bufferBG);
+    free(bufferBTN);
+
+    pConverterBG->lpVtbl->Release(pConverterBG);
+    pFrameBG->lpVtbl->Release(pFrameBG);
+    pDecoderBG->lpVtbl->Release(pDecoderBG);
+
+    pConverterBTN->lpVtbl->Release(pConverterBTN);
+    pFrameBTN->lpVtbl->Release(pFrameBTN);
+    pDecoderBTN->lpVtbl->Release(pDecoderBTN);
+    
+    pFactory->lpVtbl->Release(pFactory);
+    CoUninitialize();
+    return 0;
+}
+
 HBITMAP g_hbmBackground = NULL;
 HBITMAP g_hbmBackgroundMask = NULL;
 
@@ -284,107 +449,9 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch(msg)
     {
         case WM_CREATE: {
-            IWICImagingFactory *pFactory = NULL;
-            IWICBitmapDecoder *pDecoder = NULL;
-            IWICBitmapFrameDecode *pFrame = NULL;
-            IWICFormatConverter *pConverter = NULL;
-
-            // Initialize COM for WIC
-            CoInitialize(NULL);
-
-            // Create WIC factory
-            HRESULT hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
-                                        &IID_IWICImagingFactory, (LPVOID*)&pFactory);
-            if (FAILED(hr)) return -1;
-
-            // Create decoder for PNG file
-            hr = pFactory->lpVtbl->CreateDecoderFromFilename(
-                pFactory,
-                L"C:\\Users\\Meira\\Desktop\\Projects\\physics_toy\\assets\\remote.png",   // PNG path
-                NULL,
-                GENERIC_READ,
-                WICDecodeMetadataCacheOnLoad,
-                &pDecoder);
-            if (FAILED(hr)) return -1;
-
-            // Get first frame
-            hr = pDecoder->lpVtbl->GetFrame(pDecoder, 0, &pFrame);
-            if (FAILED(hr)) return -1;
-
-            // Convert to 32bppPBGRA (premultiplied alpha, what UpdateLayeredWindow expects)
-            hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverter);
-            if (FAILED(hr)) return -1;
-
-            hr = pConverter->lpVtbl->Initialize(
-                pConverter,
-                (IWICBitmapSource*)pFrame,
-                &GUID_WICPixelFormat32bppPBGRA,
-                WICBitmapDitherTypeNone,
-                NULL,
-                0.0,
-                WICBitmapPaletteTypeCustom);
-            if (FAILED(hr)) return -1;
-
-            // Get size
-            UINT width, height;
-            pConverter->lpVtbl->GetSize(pConverter, &width, &height);
-
-            // Allocate buffer
-            UINT stride = width * 4;
-            UINT bufSize = stride * height;
-            BYTE* buffer = (BYTE*)malloc(bufSize);
-
-            // Copy pixels into buffer
-            hr = pConverter->lpVtbl->CopyPixels(pConverter, NULL, stride, bufSize, buffer);
-            if (FAILED(hr)) return -1;
-
-            // Create DIB section
-            BITMAPINFO bmi = {0};
-            bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-            bmi.bmiHeader.biWidth       = width;
-            bmi.bmiHeader.biHeight      = -((LONG)height); // top-down
-            bmi.bmiHeader.biPlanes      = 1;
-            bmi.bmiHeader.biBitCount    = 32;
-            bmi.bmiHeader.biCompression = BI_RGB;
-
-            void* pvBits = NULL;
-            HDC hdcScreen = GetDC(NULL);
-            HBITMAP hBmp = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pvBits, NULL, 0);
-
-            // Copy buffer into DIB
-            memcpy(pvBits, buffer, bufSize);
-
-            // Push into layered window
-            HDC hdcMem = CreateCompatibleDC(hdcScreen);
-            HBITMAP old = (HBITMAP)SelectObject(hdcMem, hBmp);
-
-            SIZE sizeWindow = { width, height };
-            POINT ptSrc     = { 0, 0 };
-            POINT ptDest    = { 450, 20 };
-
-            BLENDFUNCTION blend = {0};
-            blend.BlendOp             = AC_SRC_OVER;
-            blend.BlendFlags          = 0;
-            blend.SourceConstantAlpha = 255;
-            blend.AlphaFormat         = AC_SRC_ALPHA;
-
-            UpdateLayeredWindow(hwnd, hdcScreen, &ptDest, &sizeWindow,
-                                hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
-
-            // Cleanup
-            SelectObject(hdcMem, old);
-            DeleteDC(hdcMem);
-            ReleaseDC(NULL, hdcScreen);
-            free(buffer);
-
-            pConverter->lpVtbl->Release(pConverter);
-            pFrame->lpVtbl->Release(pFrame);
-            pDecoder->lpVtbl->Release(pDecoder);
-            pFactory->lpVtbl->Release(pFactory);
-            CoUninitialize();
+            DrawRemote(hwnd, 50, 210);
 
 
-            // TODO: will need to remake the button pushdown be sorta a selector instead of this cursed shit but whatever for now. it works. just doesn't look like it
             CreateWindowEx(
                 WS_EX_CLIENTEDGE,
                 "BUTTON",
@@ -424,6 +491,7 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
             
+            // by default checks off the first button (default brush)
             CheckRadioButton(hwnd, 1, 3, 1);
             return 0;
         }
@@ -435,12 +503,15 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             switch (LOWORD(wParam)) {
                 case 1:
                     current_brush = SAND;
+                    DrawRemote(hwnd, 50, 210);
                     break;
                 case 2:
                     current_brush = GAY_SAND;
+                    DrawRemote(hwnd, 115, 210);
                     break;
                 case 3:
                     current_brush = ROCK;
+                    DrawRemote(hwnd, 180, 210);
                     break;
                 case 69:
                     printf("daba dee daba do\n");
