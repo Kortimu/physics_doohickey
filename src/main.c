@@ -1,7 +1,6 @@
 #include <stdio.h>
-#include <windef.h>
 #include <windows.h>
-#include <wingdi.h>
+#include <windowsx.h>
 #include <wincodec.h>
 
 #define FRAME_RATE 120
@@ -80,6 +79,8 @@ COLORREF rainbow_table[256] = {
     RGB(255,0,17), RGB(255,0,11), RGB(255,0,5), RGB(255,0,0)
 };
 int hue = 0;
+
+BOOL skibidi_pressed = FALSE;
 
 enum material {
     BACKGROUND,
@@ -276,11 +277,38 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-// TODO: refactor for multiple pressed buttons
-// (toggles and whatnot idk)
-// (also just general press behaviour for when i feel like it)
-int DrawRemote(HWND hwnd, int brushX, int brushY)
+// TODO: would be cool if buttons would have a 3 states, not 2: normal, pressed, *selected*
+int DrawRemote(HWND hwnd)
 {
+    int brushX, brushY;
+    LPCWSTR buttonGraphic;
+
+    switch (current_brush) {
+        case BACKGROUND: {
+            brushX = -1;
+            brushY = -1;
+            buttonGraphic = L"..\\assets\\bumton_pressed.png";
+            break;
+        }
+        case SAND: {
+            brushX = 50;
+            brushY = 210;
+            buttonGraphic = L"..\\assets\\bumton_pressed_sand.png";
+            break;
+        }
+        case GAY_SAND: {
+            brushX = 115;
+            brushY = 210;
+            buttonGraphic = L"..\\assets\\bumton_pressed_gay.png";
+            break;
+        }
+        case ROCK: {
+            brushX = 180;
+            brushY = 210;
+            buttonGraphic = L"..\\assets\\bumton_pressed_rock.png";
+            break;
+        }
+    }
     IWICImagingFactory *pFactory = NULL;
 
     IWICBitmapDecoder *pDecoderBG = NULL;
@@ -291,6 +319,10 @@ int DrawRemote(HWND hwnd, int brushX, int brushY)
     IWICBitmapFrameDecode *pFrameBTN = NULL;
     IWICFormatConverter *pConverterBTN = NULL;
 
+    IWICBitmapDecoder *pDecoderSkibidi = NULL;
+    IWICBitmapFrameDecode *pFrameSkibidi = NULL;
+    IWICFormatConverter *pConverterSkibidi = NULL;
+
     CoInitialize(NULL);
 
     HRESULT hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
@@ -300,7 +332,7 @@ int DrawRemote(HWND hwnd, int brushX, int brushY)
     /******* load background *******/
     hr = pFactory->lpVtbl->CreateDecoderFromFilename(
         pFactory,
-        L"C:\\Users\\Meira\\Desktop\\Projects\\physics_toy\\assets\\remote.png",
+        L"..\\assets\\remote.png",
         NULL,
         GENERIC_READ,
         WICDecodeMetadataCacheOnLoad,
@@ -337,7 +369,7 @@ int DrawRemote(HWND hwnd, int brushX, int brushY)
     /******* load button selector thingy *******/
     hr = pFactory->lpVtbl->CreateDecoderFromFilename(
         pFactory,
-        L"C:\\Users\\Meira\\Desktop\\Projects\\physics_toy\\assets\\bumton_pressed.png",
+        buttonGraphic,
         NULL,
         GENERIC_READ,
         WICDecodeMetadataCacheOnLoad,
@@ -388,6 +420,66 @@ int DrawRemote(HWND hwnd, int brushX, int brushY)
         }
     }
 
+    /******* load skibidi rizz button *******/
+    if (skibidi_pressed == TRUE) {
+
+        hr = pFactory->lpVtbl->CreateDecoderFromFilename(
+            pFactory,
+            L"..\\assets\\bumton_wide_pressed.png",
+            NULL,
+            GENERIC_READ,
+            WICDecodeMetadataCacheOnLoad,
+            &pDecoderSkibidi);
+        if (FAILED(hr)) return -1;
+
+        hr = pDecoderSkibidi->lpVtbl->GetFrame(pDecoderSkibidi, 0, &pFrameSkibidi);
+        if (FAILED(hr)) return -1;
+
+        // convert to how UpdateLayeredWindow likes it, premultiplied and what not
+        hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverterSkibidi);
+        if (FAILED(hr)) return -1;
+
+        hr = pConverterSkibidi->lpVtbl->Initialize(
+            pConverterSkibidi,
+            (IWICBitmapSource*)pFrameSkibidi,
+            &GUID_WICPixelFormat32bppPBGRA,
+            WICBitmapDitherTypeNone,
+            NULL,
+            0.0,
+            WICBitmapPaletteTypeCustom);
+        if (FAILED(hr)) return -1;
+
+        UINT widthSkibidi, heightSkibidi;
+        pConverterSkibidi->lpVtbl->GetSize(pConverterSkibidi, &widthSkibidi, &heightSkibidi);
+
+        UINT strideSkibidi = widthSkibidi * 4;
+        UINT bufSizeSkibidi = strideSkibidi * heightSkibidi;
+        BYTE* bufferSkibidi = (BYTE*)malloc(bufSizeSkibidi);
+
+        hr = pConverterSkibidi->lpVtbl->CopyPixels(pConverterSkibidi, NULL, strideSkibidi, bufSizeSkibidi, bufferSkibidi);
+        if (FAILED(hr)) return -1;
+
+        /******* do some blit goodness (bg x skibidi) *******/
+        // UINT32* dst = (UINT32*)bufferBG;
+        UINT32* srcSkibidi = (UINT32*)bufferSkibidi;
+
+        for (UINT y = 0; y < heightSkibidi; ++y) {
+            for (UINT x = 0; x < widthSkibidi; ++x) {
+                int dx = 50 + x;
+                int dy = 270 + y;
+
+                if (dx < 0 || dy < 0 || dx >= (int)widthBG || dy >= (int)heightBG) {
+                    continue;
+                }
+
+                dst[dy * widthBG + dx] = srcSkibidi[y * widthSkibidi + x];
+            }
+        }
+
+        // i hate how this whole thing is done in general but figuring out how to abstract all of this into a function is something i don't want to think about just yet
+        free(bufferSkibidi);
+    }
+
     /******* other shit and cleanup *******/
     BITMAPINFO bmi = {0};
     bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
@@ -435,6 +527,12 @@ int DrawRemote(HWND hwnd, int brushX, int brushY)
     pConverterBTN->lpVtbl->Release(pConverterBTN);
     pFrameBTN->lpVtbl->Release(pFrameBTN);
     pDecoderBTN->lpVtbl->Release(pDecoderBTN);
+
+    if (skibidi_pressed == TRUE) {
+        pConverterSkibidi->lpVtbl->Release(pConverterSkibidi);
+        pFrameSkibidi->lpVtbl->Release(pFrameSkibidi);
+        pDecoderSkibidi->lpVtbl->Release(pDecoderSkibidi);
+    } 
     
     pFactory->lpVtbl->Release(pFactory);
     CoUninitialize();
@@ -449,8 +547,7 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch(msg)
     {
         case WM_CREATE: {
-            DrawRemote(hwnd, 50, 210);
-
+            DrawRemote(hwnd);
 
             CreateWindowEx(
                 WS_EX_CLIENTEDGE,
@@ -481,40 +578,45 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 hwnd, (HMENU)3,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
-
-            CreateWindow(
-                "BUTTON",
-                "skibidi rizz sigma mode",
-                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_GROUP,
-                50, 270, 190, 50,
-                hwnd, (HMENU)69,
-                ((LPCREATESTRUCT)lParam)->hInstance,
-                NULL);
             
             // by default checks off the first button (default brush)
             CheckRadioButton(hwnd, 1, 3, 1);
             return 0;
         }
-        // does the magic to make title-less bar draggable. idk win32 is a weird thing
-        case WM_LBUTTONDOWN:
-            SendMessage(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+        case WM_LBUTTONDOWN: {
+            int x = GET_X_LPARAM(lParam);
+            int y = GET_Y_LPARAM(lParam);
+
+            RECT skibidiButton = { 50, 270, 240, 320 };
+            POINT cursor = {x, y};
+
+            if (PtInRect(&skibidiButton, cursor)) {
+                skibidi_pressed = TRUE;
+                DrawRemote(hwnd);
+            } else {
+                // does the magic to make title-less bar draggable. idk win32 is a weird thing
+                SendMessage(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+            }
             return 0;
+        }
+        case WM_LBUTTONUP: {
+            skibidi_pressed = FALSE;
+            DrawRemote(hwnd);
+            return 0;
+        }
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case 1:
                     current_brush = SAND;
-                    DrawRemote(hwnd, 50, 210);
+                    DrawRemote(hwnd);
                     break;
                 case 2:
                     current_brush = GAY_SAND;
-                    DrawRemote(hwnd, 115, 210);
+                    DrawRemote(hwnd);
                     break;
                 case 3:
                     current_brush = ROCK;
-                    DrawRemote(hwnd, 180, 210);
-                    break;
-                case 69:
-                    printf("daba dee daba do\n");
+                    DrawRemote(hwnd);
                     break;
             }
             return 0;
