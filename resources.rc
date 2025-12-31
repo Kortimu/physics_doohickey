@@ -1,0 +1,8 @@
+#include "resource.h"
+
+IDR_REMOTE                RCDATA    "assets/remote.png"
+IDR_BUMTON_PRESSED        RCDATA    "assets/bumton_pressed.png"
+IDR_BUMTON_PRESSED_SAND   RCDATA    "assets/bumton_pressed_sand.png"
+IDR_BUMTON_PRESSED_GAY    RCDATA    "assets/bumton_pressed_gay.png"
+IDR_BUMTON_PRESSED_ROCK   RCDATA    "assets/bumton_pressed_rock.png"
+IDR_BUMTON_WIDE_PRESSED   RCDATA    "assets/bumton_wide_pressed.png"

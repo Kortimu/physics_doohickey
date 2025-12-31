@@ -1,4 +1,7 @@
+#include "../resource.h"
+
 #include <stdio.h>
+#include <stdlib.h>
 #include <windows.h>
 #include <windowsx.h>
 #include <wincodec.h>
@@ -277,207 +280,191 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+
+void load_resource(int resource_id, void **data, DWORD *size)
+{
+    HRSRC res = FindResource(NULL, MAKEINTRESOURCE(resource_id), RT_RCDATA);
+    if (!res) MessageBoxA(NULL, "Resource missing", "ERR", 0);
+
+    
+    HGLOBAL mem = LoadResource(NULL, res);
+
+    *size = SizeofResource(NULL, res);
+    *data = LockResource(mem);
+}
+
+BYTE* load_png(IWICImagingFactory *factory, int resource_id, UINT *png_width, UINT *png_height)
+{
+    HRESULT hr;
+
+    void *png_data;
+    DWORD png_size;
+    load_resource(resource_id, &png_data, &png_size);
+
+    IWICStream *stream = NULL;
+    hr = factory->lpVtbl->CreateStream(factory, &stream);
+    if (FAILED(hr)) return NULL;
+    hr = stream->lpVtbl->InitializeFromMemory(stream, (BYTE*)png_data, png_size);
+    if (FAILED(hr)) return NULL;
+
+    IWICBitmapDecoder *decoder = NULL;
+    hr = factory->lpVtbl->CreateDecoderFromStream(
+        factory,
+        (IStream*)stream,
+        NULL,
+        WICDecodeMetadataCacheOnLoad,
+        &decoder
+    );
+    if (FAILED(hr)) return NULL;
+
+    IWICBitmapFrameDecode *frame = NULL;
+    hr = decoder->lpVtbl->GetFrame(decoder, 0, &frame);
+    if (FAILED(hr)) return NULL;
+
+    IWICFormatConverter *converter = NULL;
+    hr = factory->lpVtbl->CreateFormatConverter(factory, &converter);
+    if (FAILED(hr)) return NULL;
+    hr = converter->lpVtbl->Initialize(
+        converter,
+        (IWICBitmapSource*)frame,
+        &GUID_WICPixelFormat32bppPBGRA,
+        WICBitmapDitherTypeNone,
+        NULL,
+        0.0,
+        WICBitmapPaletteTypeCustom
+    );
+    if (FAILED(hr)) return NULL;
+
+    UINT width, height;
+    converter->lpVtbl->GetSize(converter, &width, &height);
+    
+    UINT stride = width * 4;
+    UINT bufSize = stride * height;
+
+    BYTE *bufferMyBeloved = (BYTE*)malloc(bufSize);
+    if (!bufferMyBeloved) return NULL;
+
+    hr = converter->lpVtbl->CopyPixels(converter, NULL, stride, bufSize, bufferMyBeloved);
+    if (FAILED(hr)) {
+        free(bufferMyBeloved);
+        return NULL;
+    }
+
+    *png_width = width;
+    *png_height = height;
+
+    return bufferMyBeloved;
+}
+
 // TODO: would be cool if buttons would have a 3 states, not 2: normal, pressed, *selected*
 int DrawRemote(HWND hwnd)
 {
     int brushX, brushY;
-    LPCWSTR buttonGraphic;
+    int buttonGraphic;
 
     switch (current_brush) {
         case BACKGROUND: {
             brushX = -1;
             brushY = -1;
-            buttonGraphic = L"..\\assets\\bumton_pressed.png";
+            buttonGraphic = IDR_BUMTON_PRESSED;
             break;
         }
         case SAND: {
             brushX = 50;
             brushY = 210;
-            buttonGraphic = L"..\\assets\\bumton_pressed_sand.png";
+            buttonGraphic = IDR_BUMTON_PRESSED_SAND;
             break;
         }
         case GAY_SAND: {
             brushX = 115;
             brushY = 210;
-            buttonGraphic = L"..\\assets\\bumton_pressed_gay.png";
+            buttonGraphic = IDR_BUMTON_PRESSED_GAY;
             break;
         }
         case ROCK: {
             brushX = 180;
             brushY = 210;
-            buttonGraphic = L"..\\assets\\bumton_pressed_rock.png";
+            buttonGraphic = IDR_BUMTON_PRESSED_ROCK;
             break;
         }
     }
     IWICImagingFactory *pFactory = NULL;
 
-    IWICBitmapDecoder *pDecoderBG = NULL;
-    IWICBitmapFrameDecode *pFrameBG = NULL;
-    IWICFormatConverter *pConverterBG = NULL;
-
-    IWICBitmapDecoder *pDecoderBTN = NULL;
-    IWICBitmapFrameDecode *pFrameBTN = NULL;
-    IWICFormatConverter *pConverterBTN = NULL;
-
-    IWICBitmapDecoder *pDecoderSkibidi = NULL;
-    IWICBitmapFrameDecode *pFrameSkibidi = NULL;
-    IWICFormatConverter *pConverterSkibidi = NULL;
-
     CoInitialize(NULL);
 
-    HRESULT hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
-                                &IID_IWICImagingFactory, (LPVOID*)&pFactory);
-    if (FAILED(hr)) return -1;
-
-    /******* load background *******/
-    hr = pFactory->lpVtbl->CreateDecoderFromFilename(
-        pFactory,
-        L"..\\assets\\remote.png",
+    HRESULT hr = CoCreateInstance(
+        &CLSID_WICImagingFactory,
         NULL,
-        GENERIC_READ,
-        WICDecodeMetadataCacheOnLoad,
-        &pDecoderBG);
-    if (FAILED(hr)) return -1;
-
-    hr = pDecoderBG->lpVtbl->GetFrame(pDecoderBG, 0, &pFrameBG);
-    if (FAILED(hr)) return -1;
-
-    // convert to how UpdateLayeredWindow likes it, premultiplied and what not
-    hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverterBG);
-    if (FAILED(hr)) return -1;
-
-    hr = pConverterBG->lpVtbl->Initialize(
-        pConverterBG,
-        (IWICBitmapSource*)pFrameBG,
-        &GUID_WICPixelFormat32bppPBGRA,
-        WICBitmapDitherTypeNone,
-        NULL,
-        0.0,
-        WICBitmapPaletteTypeCustom);
-    if (FAILED(hr)) return -1;
+        CLSCTX_INPROC_SERVER,
+        &IID_IWICImagingFactory,
+        (LPVOID*)&pFactory
+    );
+    if (FAILED(hr)) {
+        MessageBoxA(NULL, "Factory failed", "ERR", 0);
+        return -1;
+    }
 
     UINT widthBG, heightBG;
-    pConverterBG->lpVtbl->GetSize(pConverterBG, &widthBG, &heightBG);
-
-    UINT strideBG = widthBG * 4;
-    UINT bufSizeBG = strideBG * heightBG;
-    BYTE* bufferBG = (BYTE*)malloc(bufSizeBG);
-
-    hr = pConverterBG->lpVtbl->CopyPixels(pConverterBG, NULL, strideBG, bufSizeBG, bufferBG);
-    if (FAILED(hr)) return -1;
-
-    /******* load button selector thingy *******/
-    hr = pFactory->lpVtbl->CreateDecoderFromFilename(
-        pFactory,
-        buttonGraphic,
-        NULL,
-        GENERIC_READ,
-        WICDecodeMetadataCacheOnLoad,
-        &pDecoderBTN);
-    if (FAILED(hr)) return -1;
-
-    hr = pDecoderBTN->lpVtbl->GetFrame(pDecoderBTN, 0, &pFrameBTN);
-    if (FAILED(hr)) return -1;
-
-    // convert to how UpdateLayeredWindow likes it, premultiplied and what not
-    hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverterBTN);
-    if (FAILED(hr)) return -1;
-
-    hr = pConverterBTN->lpVtbl->Initialize(
-        pConverterBTN,
-        (IWICBitmapSource*)pFrameBTN,
-        &GUID_WICPixelFormat32bppPBGRA,
-        WICBitmapDitherTypeNone,
-        NULL,
-        0.0,
-        WICBitmapPaletteTypeCustom);
-    if (FAILED(hr)) return -1;
+    BYTE *bufferBG = load_png(pFactory, IDR_REMOTE, &widthBG, &heightBG);
+    if (!bufferBG) {
+        MessageBoxA(NULL, "Buffer failed", "ERR", 0);
+        return -1;
+    }
 
     UINT widthBTN, heightBTN;
-    pConverterBTN->lpVtbl->GetSize(pConverterBTN, &widthBTN, &heightBTN);
+    BYTE *bufferBTN = load_png(pFactory, buttonGraphic, &widthBTN, &heightBTN);
+    if (!bufferBTN) {
+        MessageBoxA(NULL, "Button load failed", "ERR", 0);
+        free(bufferBG);
+        pFactory->lpVtbl->Release(pFactory);
+        CoUninitialize();
+        return -1;
+    }
 
-    UINT strideBTN = widthBTN * 4;
-    UINT bufSizeBTN = strideBTN * heightBTN;
-    BYTE* bufferBTN = (BYTE*)malloc(bufSizeBTN);
-
-    hr = pConverterBTN->lpVtbl->CopyPixels(pConverterBTN, NULL, strideBTN, bufSizeBTN, bufferBTN);
-    if (FAILED(hr)) return -1;
-
-    /******* do some blit goodness (bg x button) *******/
-    UINT32* dst = (UINT32*)bufferBG;
-    UINT32* src = (UINT32*)bufferBTN;
+    UINT32 *dst = (UINT32*)bufferBG;
+    UINT32 *src = (UINT32*)bufferBTN;
 
     for (UINT y = 0; y < heightBTN; ++y) {
         for (UINT x = 0; x < widthBTN; ++x) {
             int dx = brushX + x;
             int dy = brushY + y;
-
-            if (dx < 0 || dy < 0 || dx >= (int)widthBG || dy >= (int)heightBG) {
-                continue;
-            }
-
+            
+            if (
+                dx < 0 ||
+                dy < 0 ||
+                dx >= (int)widthBG ||
+                dy >= (int)heightBG
+            ) continue;
+            
             dst[dy * widthBG + dx] = src[y * widthBTN + x];
         }
     }
 
-    /******* load skibidi rizz button *******/
     if (skibidi_pressed == TRUE) {
-
-        hr = pFactory->lpVtbl->CreateDecoderFromFilename(
-            pFactory,
-            L"..\\assets\\bumton_wide_pressed.png",
-            NULL,
-            GENERIC_READ,
-            WICDecodeMetadataCacheOnLoad,
-            &pDecoderSkibidi);
-        if (FAILED(hr)) return -1;
-
-        hr = pDecoderSkibidi->lpVtbl->GetFrame(pDecoderSkibidi, 0, &pFrameSkibidi);
-        if (FAILED(hr)) return -1;
-
-        // convert to how UpdateLayeredWindow likes it, premultiplied and what not
-        hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverterSkibidi);
-        if (FAILED(hr)) return -1;
-
-        hr = pConverterSkibidi->lpVtbl->Initialize(
-            pConverterSkibidi,
-            (IWICBitmapSource*)pFrameSkibidi,
-            &GUID_WICPixelFormat32bppPBGRA,
-            WICBitmapDitherTypeNone,
-            NULL,
-            0.0,
-            WICBitmapPaletteTypeCustom);
-        if (FAILED(hr)) return -1;
-
         UINT widthSkibidi, heightSkibidi;
-        pConverterSkibidi->lpVtbl->GetSize(pConverterSkibidi, &widthSkibidi, &heightSkibidi);
+        BYTE *bufferSkibidi = load_png(pFactory, IDR_BUMTON_WIDE_PRESSED, &widthSkibidi, &heightSkibidi);
 
-        UINT strideSkibidi = widthSkibidi * 4;
-        UINT bufSizeSkibidi = strideSkibidi * heightSkibidi;
-        BYTE* bufferSkibidi = (BYTE*)malloc(bufSizeSkibidi);
+        if (bufferSkibidi) {
+            UINT32 *srcSkibidi = (UINT32*)bufferSkibidi;
 
-        hr = pConverterSkibidi->lpVtbl->CopyPixels(pConverterSkibidi, NULL, strideSkibidi, bufSizeSkibidi, bufferSkibidi);
-        if (FAILED(hr)) return -1;
+            for (UINT y = 0; y < heightSkibidi; ++y) {
+                for (UINT x = 0; x < widthSkibidi; ++x) {
+                    int dx = 50 + x;
+                    int dy = 270 + y;
 
-        /******* do some blit goodness (bg x skibidi) *******/
-        // UINT32* dst = (UINT32*)bufferBG;
-        UINT32* srcSkibidi = (UINT32*)bufferSkibidi;
+                    if (
+                        dx < 0 ||
+                        dy < 0 ||
+                        dx >= (int)widthBG ||
+                        dy >= (int)heightBG
+                    ) continue;
 
-        for (UINT y = 0; y < heightSkibidi; ++y) {
-            for (UINT x = 0; x < widthSkibidi; ++x) {
-                int dx = 50 + x;
-                int dy = 270 + y;
-
-                if (dx < 0 || dy < 0 || dx >= (int)widthBG || dy >= (int)heightBG) {
-                    continue;
+                    dst[dy * widthBG + dx] = srcSkibidi[y * widthSkibidi + x];
                 }
-
-                dst[dy * widthBG + dx] = srcSkibidi[y * widthSkibidi + x];
             }
-        }
 
-        // i hate how this whole thing is done in general but figuring out how to abstract all of this into a function is something i don't want to think about just yet
-        free(bufferSkibidi);
+            free(bufferSkibidi);
+        }
     }
 
     /******* other shit and cleanup *******/
@@ -493,6 +480,7 @@ int DrawRemote(HWND hwnd)
     HDC hdcScreen = GetDC(NULL);
     HBITMAP hBmp = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pvBits, NULL, 0);
 
+    UINT bufSizeBG = widthBG * heightBG * 4;
     memcpy(pvBits, bufferBG, bufSizeBG);
 
     HDC hdcMem = CreateCompatibleDC(hdcScreen);
@@ -517,22 +505,9 @@ int DrawRemote(HWND hwnd)
     SelectObject(hdcMem, old);
     DeleteDC(hdcMem);
     ReleaseDC(NULL, hdcScreen);
+
     free(bufferBG);
     free(bufferBTN);
-
-    pConverterBG->lpVtbl->Release(pConverterBG);
-    pFrameBG->lpVtbl->Release(pFrameBG);
-    pDecoderBG->lpVtbl->Release(pDecoderBG);
-
-    pConverterBTN->lpVtbl->Release(pConverterBTN);
-    pFrameBTN->lpVtbl->Release(pFrameBTN);
-    pDecoderBTN->lpVtbl->Release(pDecoderBTN);
-
-    if (skibidi_pressed == TRUE) {
-        pConverterSkibidi->lpVtbl->Release(pConverterSkibidi);
-        pFrameSkibidi->lpVtbl->Release(pFrameSkibidi);
-        pDecoderSkibidi->lpVtbl->Release(pDecoderSkibidi);
-    } 
     
     pFactory->lpVtbl->Release(pFactory);
     CoUninitialize();

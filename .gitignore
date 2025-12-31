@@ -1,2 +1,12 @@
+# Build outputs
+outRelease.exe
+outDebug.exe
+*.exe
+*.res
+*.o
+*.obj
+
+# VS Code
 .vscode/
-src/build/
+!.vscode/tasks.json
+!.vscode/launch.json
