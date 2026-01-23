@@ -84,6 +84,7 @@ COLORREF rainbow_table[256] = {
 int hue = 0;
 
 BOOL skibidi_pressed = FALSE;
+BOOL sim_running = TRUE;
 
 enum material {
     BACKGROUND,
@@ -356,6 +357,41 @@ BYTE* load_png(IWICImagingFactory *factory, int resource_id, UINT *png_width, UI
     return bufferMyBeloved;
 }
 
+void draw_png(IWICImagingFactory *factory, int img_res, UINT32 *dst_buffer, UINT dst_x, UINT dst_y, UINT dst_width, UINT dst_height) {
+    UINT img_width, img_height;
+    BYTE *buffer = load_png(factory, img_res, &img_width, &img_height);
+
+    if (!buffer) {
+        MessageBoxA(NULL, "Image draw button load failed", "ERR", 0);
+        free(buffer);
+        factory->lpVtbl->Release(factory);
+        CoUninitialize();
+        return;
+    }
+
+    UINT32 *src = (UINT32*)buffer;
+
+    for (UINT y = 0; y < img_height; ++y) {
+        for (UINT x = 0; x < img_width; ++x) {
+            int dx = dst_x + x;
+            int dy = dst_y + y;
+
+            if (
+                dx < 0 ||
+                dy < 0 ||
+                dx >= (int)dst_width ||
+                dy >= (int)dst_height
+            ) continue;
+
+            dst_buffer[dy * dst_width + dx] = src[y * img_width + x];
+        }
+    }
+
+    free(buffer);
+
+    return;
+}
+
 // TODO: would be cool if buttons would have a 3 states, not 2: normal, pressed, *selected*
 int DrawRemote(HWND hwnd)
 {
@@ -411,60 +447,16 @@ int DrawRemote(HWND hwnd)
         return -1;
     }
 
-    UINT widthBTN, heightBTN;
-    BYTE *bufferBTN = load_png(pFactory, buttonGraphic, &widthBTN, &heightBTN);
-    if (!bufferBTN) {
-        MessageBoxA(NULL, "Button load failed", "ERR", 0);
-        free(bufferBG);
-        pFactory->lpVtbl->Release(pFactory);
-        CoUninitialize();
-        return -1;
-    }
-
     UINT32 *dst = (UINT32*)bufferBG;
-    UINT32 *src = (UINT32*)bufferBTN;
 
-    for (UINT y = 0; y < heightBTN; ++y) {
-        for (UINT x = 0; x < widthBTN; ++x) {
-            int dx = brushX + x;
-            int dy = brushY + y;
-            
-            if (
-                dx < 0 ||
-                dy < 0 ||
-                dx >= (int)widthBG ||
-                dy >= (int)heightBG
-            ) continue;
-            
-            dst[dy * widthBG + dx] = src[y * widthBTN + x];
-        }
-    }
+    draw_png(pFactory, buttonGraphic, dst, brushX, brushY, widthBG, heightBG);
 
     if (skibidi_pressed == TRUE) {
-        UINT widthSkibidi, heightSkibidi;
-        BYTE *bufferSkibidi = load_png(pFactory, IDR_BUMTON_WIDE_PRESSED, &widthSkibidi, &heightSkibidi);
+        draw_png(pFactory, IDR_BUMTON_WIDE_PRESSED, dst, 115, 270, widthBG, heightBG);
+    }
 
-        if (bufferSkibidi) {
-            UINT32 *srcSkibidi = (UINT32*)bufferSkibidi;
-
-            for (UINT y = 0; y < heightSkibidi; ++y) {
-                for (UINT x = 0; x < widthSkibidi; ++x) {
-                    int dx = 50 + x;
-                    int dy = 270 + y;
-
-                    if (
-                        dx < 0 ||
-                        dy < 0 ||
-                        dx >= (int)widthBG ||
-                        dy >= (int)heightBG
-                    ) continue;
-
-                    dst[dy * widthBG + dx] = srcSkibidi[y * widthSkibidi + x];
-                }
-            }
-
-            free(bufferSkibidi);
-        }
+    if (sim_running == FALSE) {
+        draw_png(pFactory, IDR_BUMTON_PRESSED_STOP, dst, 50, 270, widthBG, heightBG);
     }
 
     /******* other shit and cleanup *******/
@@ -507,7 +499,6 @@ int DrawRemote(HWND hwnd)
     ReleaseDC(NULL, hdcScreen);
 
     free(bufferBG);
-    free(bufferBTN);
     
     pFactory->lpVtbl->Release(pFactory);
     CoUninitialize();
@@ -553,6 +544,18 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 hwnd, (HMENU)3,
                 ((LPCREATESTRUCT)lParam)->hInstance,
                 NULL);
+
+
+            // pause sim button
+            CreateWindowEx(
+                WS_EX_CLIENTEDGE,
+                "BUTTON",
+                "pause sim",
+                WS_TABSTOP | WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | BS_PUSHLIKE,
+                50, 270, 60, 50,
+                hwnd, (HMENU)101,
+                ((LPCREATESTRUCT)lParam)->hInstance,
+                NULL);
             
             // by default checks off the first button (default brush)
             CheckRadioButton(hwnd, 1, 3, 1);
@@ -562,7 +565,7 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             int x = GET_X_LPARAM(lParam);
             int y = GET_Y_LPARAM(lParam);
 
-            RECT skibidiButton = { 50, 270, 240, 320 };
+            RECT skibidiButton = { 115, 270, 240, 320 };
             POINT cursor = {x, y};
 
             if (PtInRect(&skibidiButton, cursor)) {
@@ -591,6 +594,11 @@ LRESULT CALLBACK RemProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     break;
                 case 3:
                     current_brush = ROCK;
+                    DrawRemote(hwnd);
+                    break;
+                case 101:
+                    if (sim_running == TRUE) sim_running = FALSE;
+                    else sim_running = TRUE;
                     DrawRemote(hwnd);
                     break;
             }
@@ -719,7 +727,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         QueryPerformanceCounter(&now);
         double inbetween_time = (double)(now.QuadPart - prev.QuadPart) / (double)freq.QuadPart;
 
-        do_world_tick(hwnd_screen);
+        if (sim_running == TRUE) {
+            do_world_tick(hwnd_screen);
+        }
 
         QueryPerformanceCounter(&now);
         double frame_time = (double)(now.QuadPart - prev.QuadPart) / (double)freq.QuadPart;
