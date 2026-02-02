@@ -93,8 +93,13 @@ enum material {
     ROCK
 };
 enum material current_brush = SAND;
-BOOL drawing = FALSE;
-BOOL erasing = FALSE;
+enum drawing_states {
+    NONE,
+    DRAWING,
+    ERASING
+};
+enum drawing_states current_drawing_state = NONE;
+
 int brush_size = 2;
 RGBQUAD pixels[SCREEN_WIDTH * SCREEN_HEIGHT];
 
@@ -150,6 +155,13 @@ void color_pixel(RGBQUAD* pixel, COLORREF color) {
 }
 
 void do_world_tick(HWND hwnd) {
+    if (current_drawing_state == DRAWING) {
+        draw_pixel(hwnd, material_to_color(current_brush));
+    } else if (current_drawing_state == ERASING) {
+        draw_pixel(hwnd, material_to_color(BACKGROUND));
+    }
+
+    // all the other fun stuff
     HDC hdc = GetDC(hwnd);
     HDC hdc_com = CreateCompatibleDC(hdc);
     HBITMAP h_bitmap = CreateCompatibleBitmap(hdc, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -222,39 +234,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         case WM_LBUTTONDOWN:
         {
-            draw_pixel(hwnd, material_to_color(current_brush));
-            drawing = TRUE;
+            current_drawing_state = DRAWING;
             return 0;
         }
         break;
         case WM_LBUTTONUP:
         {
-            drawing = FALSE;
-            // read_world(hwnd);
+            if (wParam & MK_RBUTTON) current_drawing_state = ERASING;
+            else current_drawing_state = NONE;
             return 0;
         }
         break;
         case WM_RBUTTONDOWN:
         {
-            draw_pixel(hwnd, material_to_color(BACKGROUND));
-            erasing = TRUE;
+            current_drawing_state = ERASING;
             return 0;
         }
         break;
         case WM_RBUTTONUP:
         {
-            erasing = FALSE;
-            // read_world(hwnd);
-            return 0;
-        }
-        break;
-        case WM_MOUSEMOVE:
-        {
-            if (drawing == TRUE) {
-                draw_pixel(hwnd, material_to_color(current_brush));
-            } else if (erasing == TRUE) {
-                draw_pixel(hwnd, material_to_color(BACKGROUND));
-            }
+            if (wParam & MK_LBUTTON) current_drawing_state = DRAWING;
+            else current_drawing_state = NONE;
             return 0;
         }
         break;
