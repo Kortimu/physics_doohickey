@@ -154,14 +154,15 @@ void color_pixel(RGBQUAD* pixel, COLORREF color) {
     pixel->rgbBlue = GetBValue(color);
 }
 
-void do_world_tick(HWND hwnd) {
+void draw_world(HWND hwnd) {
     if (current_drawing_state == DRAWING) {
         draw_pixel(hwnd, material_to_color(current_brush));
     } else if (current_drawing_state == ERASING) {
         draw_pixel(hwnd, material_to_color(BACKGROUND));
     }
+}
 
-    // all the other fun stuff
+void do_world_tick(HWND hwnd) {
     HDC hdc = GetDC(hwnd);
     HDC hdc_com = CreateCompatibleDC(hdc);
     HBITMAP h_bitmap = CreateCompatibleBitmap(hdc, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -727,6 +728,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         QueryPerformanceCounter(&now);
         double inbetween_time = (double)(now.QuadPart - prev.QuadPart) / (double)freq.QuadPart;
 
+        draw_world(hwnd_screen);
         if (sim_running == TRUE) {
             do_world_tick(hwnd_screen);
         }
